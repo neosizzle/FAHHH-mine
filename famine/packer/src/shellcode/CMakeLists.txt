@@ -1,6 +1,6 @@
 add_library(shellcode INTERFACE)
 
-set(SHELLCODE_ROOT "${CMAKE_BINARY_DIR}/ft_shield/packer/src/shellcode")
+set(SHELLCODE_ROOT "${CMAKE_BINARY_DIR}/famine/packer/src/shellcode")
 file(COPY "shellcode.s" DESTINATION ${SHELLCODE_ROOT})
 
 # compile shellcode

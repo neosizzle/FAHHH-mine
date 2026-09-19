@@ -35,3 +35,4 @@ endstruc
 ; statics
 %define DIRENT_BUF_SZ   128
 %define SIX_SEVEN		67
+%define BLAZEIT			420

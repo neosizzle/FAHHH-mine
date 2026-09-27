@@ -23,14 +23,21 @@
 %define DT_DIR			0x4
 
 ; structs
+; struc	dirent
+; .d_ino:			resq	1	; 64-bit inode number
+; .d_off:			resq	1	; 64-bit offset to next structure
+; .d_reclen		resw	1	; Size of this dirent
+; .d_name_pad		resb	1 	; padding for Filename
+; .d_name			resb	1	; Filename (null-terminated)
+; endstruc
+
 struc	dirent
 .d_ino:			resq	1	; 64-bit inode number
 .d_off:			resq	1	; 64-bit offset to next structure
 .d_reclen		resw	1	; Size of this dirent
-.d_name_pad		resb	1 	; padding for Filename
+.d_type			resb	1 	; filetype
 .d_name			resb	1	; Filename (null-terminated)
 endstruc
-
 
 ; statics
 %define DIRENT_BUF_SZ   128

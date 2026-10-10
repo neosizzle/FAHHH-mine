@@ -56,3 +56,4 @@ endstruc
 %define DIRENT_BUF_SZ   128
 %define SIX_SEVEN		67
 %define BLAZEIT			420
+%define THEO_MIN_SIZE   74

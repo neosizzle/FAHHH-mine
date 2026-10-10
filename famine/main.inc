@@ -6,6 +6,10 @@
 %define SYS_CLOSE       3
 %define SYS_GETDENTS64  217
 %define SYS_MPROTECT    10
+%define SYS_LSEEK    	8
+%define SYS_MMAP		9
+%define SYS_MUNMAP		11
+
 
 ; SYS_OPEN
 %define O_RDONLY        0x0
@@ -17,6 +21,15 @@
 %define PROT_READ       0x1
 %define PROT_WRITE      0x2
 %define PROT_EXEC       0x4
+
+; SYS_LSEEK
+%define SEEK_END       0x2
+
+; SYS_MMAP
+%define PROT_READ   0x1
+%define PROT_WRITE  0x2
+%define MAP_SHARED  0x01
+%define MAP_PRIVATE 0x02
 
 ; dirent constants
 %define DT_REG			0x8

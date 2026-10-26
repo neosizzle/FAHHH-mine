@@ -9,7 +9,7 @@
 %define SYS_LSEEK    	8
 %define SYS_MMAP		9
 %define SYS_MUNMAP		11
-
+%define SYS_FTRUNCATE	77
 
 ; SYS_OPEN
 %define O_RDONLY        0x0
@@ -69,3 +69,4 @@ endstruc
 %define SIX_SEVEN		67
 %define BLAZEIT			420
 %define THEO_MIN_SIZE   74
+%define MAX_FILE_PAD	0x1000

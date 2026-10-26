@@ -1,3 +1,6 @@
+rm -rf /tmp/test
+rm -rf /tmp/test2
+
 mkdir /tmp/test
 mkdir /tmp/test2
 echo "asdf" > /tmp/test/bad 

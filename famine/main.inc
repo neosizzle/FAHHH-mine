@@ -69,4 +69,4 @@ endstruc
 %define SIX_SEVEN		67
 %define BLAZEIT			420
 %define THEO_MIN_SIZE   74
-%define MAX_FILE_PAD	0x1000
+%define MAX_FILE_PAD	0x5000

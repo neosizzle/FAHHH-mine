@@ -10,7 +10,9 @@ cp /lib/x86_64-linux-gnu/libseccomp.so.2  /tmp/test/bad4
 
 # Create a simple C program
 cat > /tmp/test/simple.c <<'EOF'
+#include <stdio.h>
 int main(void) {
+    printf("hello from gcc\n");
     return 0;
 }
 EOF

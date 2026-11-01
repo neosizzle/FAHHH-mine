@@ -10,6 +10,7 @@
 %define SYS_MMAP		9
 %define SYS_MUNMAP		11
 %define SYS_FTRUNCATE	77
+%define SYS_FORK		57
 
 ; SYS_OPEN
 %define O_RDONLY        0x0
@@ -52,16 +53,15 @@ struc	dirent
 .d_name			resb	1	; Filename (null-terminated)
 endstruc
 
-struc	pheader
-.p_type:			resd	1
-.p_flags:			resd	1
-.p_vaddr			resq	1
-.p_paddr			resq	1
-.p_filesz			resq	1
-.p_memsz			resq	1
-.p_flags_2:			resd	1
-.p_align			resq	1
-
+struc pheader
+.p_type:    resd 1    ; 32-bit segment type
+.p_flags:   resd 1    ; 32-bit segment flags
+.p_offset:  resq 1    ; 64-bit offset in file
+.p_vaddr:   resq 1    ; 64-bit virtual address
+.p_paddr:   resq 1    ; 64-bit physical address
+.p_filesz:  resq 1    ; 64-bit size in file
+.p_memsz:   resq 1    ; 64-bit size in memory
+.p_align:   resq 1    ; 64-bit alignment
 endstruc
 
 ; statics

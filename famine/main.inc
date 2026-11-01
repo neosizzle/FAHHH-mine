@@ -36,15 +36,6 @@
 %define DT_REG			0x8
 %define DT_DIR			0x4
 
-; structs
-; struc	dirent
-; .d_ino:			resq	1	; 64-bit inode number
-; .d_off:			resq	1	; 64-bit offset to next structure
-; .d_reclen		resw	1	; Size of this dirent
-; .d_name_pad		resb	1 	; padding for Filename
-; .d_name			resb	1	; Filename (null-terminated)
-; endstruc
-
 struc	dirent
 .d_ino:			resq	1	; 64-bit inode number
 .d_off:			resq	1	; 64-bit offset to next structure
@@ -62,6 +53,19 @@ struc pheader
 .p_filesz:  resq 1    ; 64-bit size in file
 .p_memsz:   resq 1    ; 64-bit size in memory
 .p_align:   resq 1    ; 64-bit alignment
+endstruc
+
+struc sheader
+.sh_name:      resd 1    ; 32-bit section name (string table offset)
+.sh_type:      resd 1    ; 32-bit section type
+.sh_flags:     resq 1    ; 64-bit section flags
+.sh_addr:      resq 1    ; 64-bit virtual address
+.sh_offset:    resq 1    ; 64-bit offset in file
+.sh_size:      resq 1    ; 64-bit section size
+.sh_link:      resd 1    ; 32-bit link to another section
+.sh_info:      resd 1    ; 32-bit extra information
+.sh_addralign: resq 1    ; 64-bit address alignment
+.sh_entsize:   resq 1    ; 64-bit entry size
 endstruc
 
 ; statics

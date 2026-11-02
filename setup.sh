@@ -26,4 +26,5 @@ gcc -m64 /tmp/test/simple.c -o /tmp/test/good-gcc
 # # copy the 64 bit executable and patch it so that the string 'hello' occurs right before the entry point file offset
 # python3 bad5.py
 
+cp /usr/bin/ls /tmp/test/
 cp /usr/bin/grub-mkrescue /tmp/test/

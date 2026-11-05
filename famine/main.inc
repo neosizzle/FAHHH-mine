@@ -74,4 +74,4 @@ endstruc
 %define BLAZEIT			420
 %define THEO_MIN_SIZE   74
 %define MAX_FILE_PAD	0x3000
-%define PL_SIZE			2300
+%define PL_SIZE			2600

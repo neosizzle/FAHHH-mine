@@ -17,8 +17,9 @@ target_link_options(Famine PRIVATE
     -static
 )
 option(ROOT_MODE "Enable root mode" OFF)
+option(DISPLAY_INFECT "Enable infection logging" ON)
 
-foreach(FLAG ROOT_MODE)
+foreach(FLAG ROOT_MODE DISPLAY_INFECT)
     if(${FLAG})
         target_compile_options(Famine PRIVATE
             $<$<COMPILE_LANGUAGE:ASM_NASM>:-D${FLAG}>

@@ -38,7 +38,27 @@ Run the virus
 
 ## How it works
 - elaborate on design and limitations
+    - where the codecave is
+    - the benefits of the codecave
+        - higher infection rate because less strict size requirement
+        - does not need to optimize for code size
+    - the limitations of such codecave
+        - overlapping memory
+        - change in file size (not sneaky)
+        - slow due to resizing
+        - non atomic
+
+- elaborate on virus flow step by step
+    - check if mother or infected child
+    - if child, do what
+        - run evasion routine
+        - run infection routine
+        - jump ro original entry
+    - if mother, do what
+        - run evasion routine
+        - run infection routine
 - elaborate on codecave construction: step by step
+    - infect_single_file, checks and writes
 - elaborate on common pitfalls
 - elaborate on tools and tips incl. util bash scripts
 

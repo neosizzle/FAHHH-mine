@@ -37,28 +37,86 @@ Run the virus
 ```
 
 ## How it works
-- elaborate on design and limitations
-    - where the codecave is
-    - the benefits of the codecave
-        - higher infection rate because less strict size requirement
-        - does not need to optimize for code size
-    - the limitations of such codecave
-        - overlapping memory
-        - change in file size (not sneaky)
-        - slow due to resizing
-        - non atomic
+### Design
+The virus will inject arbitrary code to already existing binaries by editing the binary directly. It will look for something called a 'codecave' which is a place in binary where arbitrary instructions can run during runtime (Imagine the null bytes space after the .text section of a ELF program. We can add things there without making the program un-runnable).
 
-- elaborate on virus flow step by step
-    - check if mother or infected child
-    - if child, do what
-        - run evasion routine
-        - run infection routine
-        - jump ro original entry
-    - if mother, do what
-        - run evasion routine
-        - run infection routine
+When a program runs, it will read the file, load the instructions and execute them. If we put custom instructions inside the file without overwriting the old functions, and find a way to run our custom instructions first then jump to the original intended instructions, we have essentially created a function hook.
+
+```
+Original function
+       |
+       v
+Custom hook executes first
+       |
+       v
+Original function executes
+       |
+       v
+Original behavior continues
+```
+
+The virus itself, will be implemented as a function hook. At this point, it is already assumed one is familiar with how the ELF loader works, and what consists in an ELF file. If not, check out [Executable loading process here](https://github.com/neosizzle/woody-woodpacker) 
+
+The location of the codecave to place the hook however, can vary. For this implementation, it selects the last PT_LOAD segment, places the code at the end of the segment, extending the segment size and resizing the file if needed to give more space to the segment.
+
+![High level flow](./docs/image.png)
+> Before on the left, after on the right
+
+Such a design has its own benefits where
+- It has a higher infection rate
+- No optimization needed for size of virus code since the size can be self defined.
+- Since it is the last segment, it wont break virtual addressing of other segments when resizing.
+
+Of course, it also has limitations whereby
+- overlapping memory addressing when bss section is too high, which the infection will be skipped
+- change in file size can be easily detected
+- worse performance due to increase of buffer size 
+- non atomic as in resizing and writing are two seperate actions. (ftruncate and mmap write)
+
+### Virus flow
+```
+Check if rip - a few bytes have data 
+(used to store old entry address offset, defautled to 0)
+├── Yes, we are running from an infected file
+├── Fork
+│   ├── Parent will jump to original entry using entry address offset
+│   └── Child will be doing evil stuff
+│       ├── Run evasion routine (see below)
+│       └── Run infection routine (see below)
+└── No, we are patient zero
+    ├── Run evasion routine
+    │   ├── Iterate through and read /proc/<pid>/status for all pid
+    │   │   └── If the process name is blacklisted, return 1
+    │   └── If clear, return 0
+    ├── If evasion routine tripped, exit immediately
+    └── Run infection routine
+        └── Iterate though all files from predefined root
+            ├── If the current 'file' is a folder, recursively iterate its own files
+            └── Infect single file
+                ├── Minimum file size gate
+                ├── ELF 64bit file type gate
+                ├── Executable ELF check gate
+                ├── Double infection prevention gate
+                ├── Codecave plasability gate
+                ├── Resize (expand) file
+                ├── Padding pass (pad the empty size with 0)
+                └── Patching pass (replace 0 with virus code)
+elaborate on virus flow step by step
+├── check if mother or infected child
+├── if child, do what
+│   ├── run evasion routine
+│   ├── run infection routine
+│   └── jump ro original entry
+└── if mother, do what
+    ├── run evasion routine
+    └── run infection routine
+```
+
+### Codecave construction (patching pass)
 - elaborate on codecave construction: step by step
     - infect_single_file, checks and writes
+
+### Pitfalls and useful tools 
 - elaborate on common pitfalls
 - elaborate on tools and tips incl. util bash scripts
 

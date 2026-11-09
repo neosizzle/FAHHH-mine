@@ -101,24 +101,42 @@ Check if rip - a few bytes have data
                 ├── Resize (expand) file
                 ├── Padding pass (pad the empty size with 0)
                 └── Patching pass (replace 0 with virus code)
-elaborate on virus flow step by step
-├── check if mother or infected child
-├── if child, do what
-│   ├── run evasion routine
-│   ├── run infection routine
-│   └── jump ro original entry
-└── if mother, do what
-    ├── run evasion routine
-    └── run infection routine
 ```
 
 ### Codecave construction (patching pass)
-- elaborate on codecave construction: step by step
-    - infect_single_file, checks and writes
+```
+patching pass
+├── Locate segment with the furthest vaddr
+├── Write params to ELF file
+│   ├── Calculate offset to write
+│   └── Calculate entry gap from _start (including param + signature gap)
+├── Write shellcode to ELF file
+│   └── Write all data in precomputed _start relative label to _end relative label from rip
+├── Change segment permission to RWX
+├── Change mem and file size of segment
+├── Change section header offset
+├── Change entry
+├── Get file offset from segment and locate the section header pointing to this segment
+└── Change offset of sections after the section found above
+```
 
 ### Pitfalls and useful tools 
-- elaborate on common pitfalls
-- elaborate on tools and tips incl. util bash scripts
+During development, I had a few instances where I faced some issues where I need a specific (almost arbitrary) solution to fix the issue. Such as the requirement of an arbitrary offset to read the data correctly. It turns out that was actually an earlier issue upstream when the data is being written originally. 
+
+Such an issue only surface when more critical bugs do happen (a segfault on a normal operation). It is only through debugging the critial issue then only I found out the reason of the arbitrary patch on a smaller issue earlier. The lesson is, if it feels wrong, it probably is.
+
+There are some tools I find useful when developing this; I will list them out here
+
+**pwndbg / any gdb debugger**
+This is obvious, it is a neccasity for debugging asm programs. I personally prefer pwndbg because it supports context support
+[pwndbg](https://pwndbg.re/stable/features/])
+
+**setup.sh**
+This is a simple script to set up the /tmp/test folders, it has multiple basic test cases and it is a convineent script to set up the environment for testing.
+
+**check_pl_sz.sh**
+This is a simple script that measures the size of a .text section of an ELF program, useful for space optimization.
+
 
 ## Research pipeline
 - gdaryl mission

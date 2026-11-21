@@ -127,16 +127,22 @@ Such an issue only surface when more critical bugs do happen (a segfault on a no
 
 There are some tools I find useful when developing this; I will list them out here
 
+
 **pwndbg / any gdb debugger**
 This is obvious, it is a neccasity for debugging asm programs. I personally prefer pwndbg because it supports context support
 [pwndbg](https://pwndbg.re/stable/features/])
 
+
 **setup.sh**
 This is a simple script to set up the /tmp/test folders, it has multiple basic test cases and it is a convineent script to set up the environment for testing.
+
 
 **check_pl_sz.sh**
 This is a simple script that measures the size of a .text section of an ELF program, useful for space optimization.
 
+**elfcat**
+A useful tool for visualizing ELF file structure and double check your implementations before running the binary
+![elfcat](./docs/elfcat.png)
 
 ## Research pipeline
 - gdaryl mission
